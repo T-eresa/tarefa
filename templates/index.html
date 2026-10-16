@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="pt">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CRM Simples</title>
+  <style>
+    :root { --bg:#f4f5f7; --card:#fff; --txt:#1f2430; --mut:#6b7280; --bd:#e5e7eb; --pri:#2563eb; --red:#dc2626; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: system-ui, sans-serif; background:var(--bg); color:var(--txt); }
+    header { background:var(--pri); color:#fff; padding:16px 24px; font-size:20px; font-weight:600; }
+    main { max-width:1000px; margin:0 auto; padding:16px; display:grid; gap:16px; }
+    section { background:var(--card); border:1px solid var(--bd); border-radius:8px; padding:16px; }
+    h2 { margin:0 0 12px; font-size:16px; }
+    .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:8px; }
+    .card { border:1px solid var(--bd); border-radius:6px; padding:10px; }
+    .card b { display:block; font-size:22px; }
+    .card span { color:var(--mut); font-size:13px; text-transform:capitalize; }
+    form { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px; }
+    input, select, button { padding:8px; border:1px solid var(--bd); border-radius:6px; font:inherit; }
+    input { flex:1 1 140px; }
+    button { background:var(--pri); color:#fff; border:0; cursor:pointer; }
+    button.del { background:none; color:var(--red); padding:4px 8px; }
+    table { width:100%; border-collapse:collapse; font-size:14px; }
+    th, td { text-align:left; padding:8px; border-bottom:1px solid var(--bd); }
+    th { color:var(--mut); font-weight:500; }
+    .vazio { color:var(--mut); padding:8px; }
+    @media (max-width:600px) { th:nth-child(n+3), td:nth-child(n+3) { font-size:12px; } }
+  </style>
+</head>
+<body>
+  <header>CRM Simples</header>
+  <main>
+    <section>
+      <h2>Funil</h2>
+      <div class="cards" id="resumo"></div>
+    </section>
+
+    <section>
+      <h2>Contatos</h2>
+      <form id="form-contato">
+        <input name="nome" placeholder="Nome *" required>
+        <input name="email" placeholder="Email">
+        <input name="telefone" placeholder="Telefone">
+        <input name="empresa" placeholder="Empresa">
+        <button>Adicionar</button>
+      </form>
+      <table><thead><tr><th>Nome</th><th>Email</th><th>Telefone</th><th>Empresa</th><th></th></tr></thead>
+        <tbody id="contatos"></tbody></table>
+    </section>
+
+    <section>
+      <h2>Negócios</h2>
+      <form id="form-negocio">
+        <select name="contato_id" class="sel-contato" required></select>
+        <input name="titulo" placeholder="Título *" required>
+        <input name="valor" type="number" step="0.01" placeholder="Valor">
+        <button>Adicionar</button>
+      </form>
+      <table><thead><tr><th>Título</th><th>Contato</th><th>Valor</th><th>Etapa</th><th></th></tr></thead>
+        <tbody id="negocios"></tbody></table>
+    </section>
+
+    <section>
+      <h2>Notas</h2>
+      <form id="form-nota">
+        <select name="contato_id" class="sel-contato" required></select>
+        <input name="texto" placeholder="Anotação *" required>
+        <button>Adicionar</button>
+      </form>
+      <table><thead><tr><th>Contato</th><th>Nota</th><th>Data</th></tr></thead>
+        <tbody id="notas"></tbody></table>
+    </section>
+  </main>
+
+  <script>
+    const ETAPAS = {{ etapas | tojson }};
+    const $ = (s) => document.querySelector(s);
+    const esc = (t) => String(t ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+    const moeda = (v) => Number(v || 0).toLocaleString("pt-PT", { style: "currency", currency: "EUR" });
+
+    async function api(caminho, metodo = "GET", corpo) {
+      const r = await fetch(caminho, {
+        method: metodo,
+        headers: { "Content-Type": "application/json" },
+        body: corpo ? JSON.stringify(corpo) : undefined,
+      });
+      const dados = await r.json();
+      if (!r.ok) { alert(dados.erro || "Erro"); throw new Error(dados.erro); }
+      return dados;
+    }
+
+    async function carregar() {
+      const [resumo, contatos, negocios, notas] = await Promise.all([
+        api("/resumo"), api("/contatos"), api("/negocios"), api("/notas"),
+      ]);
+      const nome = Object.fromEntries(contatos.map(c => [c.id, c.nome]));
+
+      $("#resumo").innerHTML =
+        `<div class="card"><b>${resumo.total_contatos}</b><span>contatos</span></div>` +
+        ETAPAS.map(e => `<div class="card"><b>${resumo.por_etapa[e].quantidade}</b>
+          <span>${e} · ${moeda(resumo.por_etapa[e].valor_total)}</span></div>`).join("");
+
+      document.querySelectorAll(".sel-contato").forEach(s => {
+        s.innerHTML = '<option value="">Contato...</option>' +
+          contatos.map(c => `<option value="${esc(c.id)}">${esc(c.nome)}</option>`).join("");
+      });
+
+      $("#contatos").innerHTML = contatos.length ? contatos.map(c => `<tr>
+        <td>${esc(c.nome)}</td><td>${esc(c.email)}</td><td>${esc(c.telefone)}</td><td>${esc(c.empresa)}</td>
+        <td><button class="del" onclick="apagar('/contatos/${esc(c.id)}')">apagar</button></td></tr>`).join("")
+        : '<tr><td colspan="5" class="vazio">Nenhum contato.</td></tr>';
+
+      $("#negocios").innerHTML = negocios.length ? negocios.map(n => `<tr>
+        <td>${esc(n.titulo)}</td><td>${esc(nome[n.contato_id] || "?")}</td><td>${moeda(n.valor)}</td>
+        <td><select onchange="mover('${esc(n.id)}', this.value)">${ETAPAS.map(e =>
+          `<option ${e === n.etapa ? "selected" : ""}>${e}</option>`).join("")}</select></td>
+        <td><button class="del" onclick="apagar('/negocios/${esc(n.id)}')">apagar</button></td></tr>`).join("")
+        : '<tr><td colspan="5" class="vazio">Nenhum negócio.</td></tr>';
+
+      $("#notas").innerHTML = notas.length ? notas.map(n => `<tr>
+        <td>${esc(nome[n.contato_id] || "?")}</td><td>${esc(n.texto)}</td>
+        <td>${esc((n.criado_em || "").replace("T", " "))}</td></tr>`).join("")
+        : '<tr><td colspan="3" class="vazio">Nenhuma nota.</td></tr>';
+    }
+
+    async function apagar(caminho) {
+      if (confirm("Apagar?")) { await api(caminho, "DELETE"); carregar(); }
+    }
+    async function mover(id, etapa) {
+      await api(`/negocios/${id}`, "PATCH", { etapa }); carregar();
+    }
+
+    function ligarForm(seletor, caminho) {
+      $(seletor).addEventListener("submit", async (e) => {
+        e.preventDefault();
+        await api(caminho, "POST", Object.fromEntries(new FormData(e.target)));
+        e.target.reset();
+        carregar();
+      });
+    }
+    ligarForm("#form-contato", "/contatos");
+    ligarForm("#form-negocio", "/negocios");
+    ligarForm("#form-nota", "/notas");
+    carregar();
+  </script>
+</body>
+</html>
